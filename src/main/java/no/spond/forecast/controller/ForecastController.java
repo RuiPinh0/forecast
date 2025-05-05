@@ -19,7 +19,7 @@ public class ForecastController { //here we could add implmentation with auth an
     
     @GetMapping("/")
     @ResponseBody
-    public ForecastDTO getForecast(@RequestParam String eventId) throws Exception {
+    public ForecastDTO getForecast(@RequestParam Long eventId) throws Exception {
         return weatherService.getForecast(eventId);
     }
     

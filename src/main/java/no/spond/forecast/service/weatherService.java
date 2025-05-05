@@ -7,9 +7,13 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -20,44 +24,46 @@ import no.spond.forecast.dto.ForecastDTO;
 import no.spond.forecast.model.Event;
 import no.spond.forecast.model.Forecast;
 import no.spond.forecast.repository.EventRepository;
+import no.spond.forecast.repository.ForecastRepository;
 
 @Service
 public class weatherService implements IWeatherService {
-    
+    private static final Logger logger = LoggerFactory.getLogger(weatherService.class);
+
     @Autowired
     private EventRepository eventRepository;
+    
+    @Autowired
+    private ForecastRepository forecastRepository;
 
-    private RestClient metClient;
-    weatherService() {
-        metClient = RestClient.builder()
-        .requestFactory(new HttpComponentsClientHttpRequestFactory())
+    private RestClient metClient = RestClient.builder()
         .baseUrl("https://api.met.no/weatherapi/locationforecast/2.0")
         .defaultHeader("User-Agent", "ForecastService/0.1 ruip.90@gmail.com")
         .build();
-    }
-
     
-    public ForecastDTO getForecast(String eventId) {
-        Event event = eventRepository.findByEventId(eventId);
+    @Override
+    public ForecastDTO getForecast(Long eventId) {
+        Optional<Event> eventOptional = eventRepository.findById(eventId);
         Instant ifModifiedSinceInstant = ZonedDateTime.now().minusMonths(1).toInstant(); //set default value to 1 month ago
-        if (event != null && event.getLocation() != null) {
-            if(event.getEventStartDate() != null){
+        if (eventOptional.isPresent() ) {
+            Event event = eventOptional.get();
+            if(event.getLocation() != null && event.getEventStartDate() != null){
                 Duration timeToEventDays = Duration.between(Instant.now(), event.getEventStartDate());
                 
-                // If the event is more than 7 days in the future we do nothing yet and throw exception
                 if (Duration.ofDays(7).compareTo(timeToEventDays) < 0) {
-                    throw new IllegalArgumentException("Event start date is more than 7 days in the future");
+                    logger.info("Event is more than 7 days in the future. No forecast available yet!");
+                    return null;
                 }
-                
-                if (!event.getForecasts().isEmpty() && getForecastForCurrentTime(event.getForecasts()) != null) {
-                    Duration timeToEvent = Duration.between(Instant.now(), getForecastForCurrentTime(event.getForecasts()).getTime());
-                    if (getForecastForCurrentTime(event.getForecasts()).getLastUpdatedDate() != null && Duration.ofHours(2).compareTo(timeToEvent) < 0) { // If the forecast was last updated less than 2 hours ago, we return the cached forecast if exists, otherwise we fetch new data                                                   
-                        return new ForecastDTO(getForecastForCurrentTime(event.getForecasts())); 
+                List<Forecast> existingForecasts = forecastRepository.findByEventId(eventId);
+                if (!existingForecasts.isEmpty() && getForecastForCurrentTime(existingForecasts) != null) {
+                    Duration timeToEvent = Duration.between(Instant.now(), getForecastForCurrentTime(existingForecasts).getTime());
+                    if (getForecastForCurrentTime(existingForecasts).getLastUpdatedDate() != null && Duration.ofHours(2).compareTo(timeToEvent) < 0) { // If the forecast was last updated less than 2 hours ago, we return the cached forecast if exists, otherwise we fetch new data                                                   
+                        return new ForecastDTO(getForecastForCurrentTime(existingForecasts)); 
                     }
                 }
 
-                if (!event.getForecasts().isEmpty() && getForecastForCurrentTime(event.getForecasts()).getLastUpdatedDate() != null) {
-                    ifModifiedSinceInstant = getForecastForCurrentTime(event.getForecasts()).getLastUpdatedDate();
+                if (!existingForecasts.isEmpty() && getForecastForCurrentTime(existingForecasts).getLastUpdatedDate() != null) {
+                    ifModifiedSinceInstant = getForecastForCurrentTime(existingForecasts).getLastUpdatedDate();
                 }
 
                 String ifModifiedSinceString = DateTimeFormatter
@@ -68,12 +74,22 @@ public class weatherService implements IWeatherService {
                 String response = getCurrentWeather(event.getLocation().getLatitude(), event.getLocation().getLongitude(), ifModifiedSinceString);//here we do the request to the met api
                 if (response != null) {
                     List<ForecastDTO> forecastList = parseWeatherData(response);
-                    List<ForecastDTO> filteredForecasts = sliceList(event, forecastList); //slice the list to get only the forecasts that are in the event period
-                    List<Forecast> newForecasts = mapToForecastList(filteredForecasts);
+                    List<ForecastDTO> filteredForecasts = sliceList(event, forecastList); 
+                    
+                    if (filteredForecasts.isEmpty()) {
+                        filteredForecasts = new ArrayList<>();
+                        filteredForecasts.add(getForecastForEventTime(event, forecastList)); 
+                        logger.info("No matching forecasts found for the specified period. Using the closest forecast to the event time.");
+                    }
 
-                    if (event.getForecasts() != null && !event.getForecasts().isEmpty()) {
-                        List<Forecast> existingForecasts = event.getForecasts();
-                
+                    List<Forecast> newForecasts = mapToForecastList(filteredForecasts, event);
+                    logger.info("forecastList size: {}" , forecastList.size());
+                    logger.info("filteredForecasts size: {}" , filteredForecasts.size());
+                    logger.info("newForecasts size: {}" , newForecasts.size());
+                    logger.info("existingForecasts size: {}" , existingForecasts.size());
+
+                    if (existingForecasts != null && !existingForecasts.isEmpty()) {
+                                        
                         for (Forecast newForecast : newForecasts) {
                             boolean updated = false;
                 
@@ -82,6 +98,7 @@ public class weatherService implements IWeatherService {
                                     existingForecast.setWindSpeed(newForecast.getWindSpeed());
                                     existingForecast.setAirTemperature(newForecast.getAirTemperature());
                                     existingForecast.setLastUpdatedDate(Instant.now());
+                                    forecastRepository.save(existingForecast);
                                     updated = true;
                                     break;
                                 }
@@ -90,18 +107,33 @@ public class weatherService implements IWeatherService {
                             if (!updated) {
                                 existingForecasts.add(newForecast);
                             }
+                            
+                            return new ForecastDTO(getForecastForCurrentTime(existingForecasts)); //return the forecast for the current time
+                        
                         }
                     } else {
-                        event.setForecasts(newForecasts);
+                        logger.info("1-New forecasts saved to the database.");                   
+                        logger.info("Forecasts size: {}" , newForecasts.size());     
+                        logger.info("Forecasts: {}" , newForecasts.stream().map(forecast -> forecast.getTime().toString())
+                        .collect(Collectors.joining(", ")));
+                        newForecasts.forEach(forecast -> forecast.setEvent(event)); 
+                    
+                        newForecasts.forEach(forecast -> forecastRepository.save(forecast));
+                        logger.info("2-New forecasts saved to the database.");                   
+                        logger.info("Forecasts size: {}" , newForecasts.size());     
+                        logger.info("Forecasts: {}" , newForecasts.stream().map(forecast -> forecast.getTime().toString())
+                        .collect(Collectors.joining(", ")));
+
+                        return new ForecastDTO(getForecastForCurrentTime(newForecasts)); //return the forecast for the current time
                     }
-                
-                    eventRepository.save(event);
                 }
+                logger.error("No response from weather API or response is empty");
             }
-            return new ForecastDTO(getForecastForCurrentTime(event.getForecasts()));
+            logger.error("Event location or starting date is still null");
         }
         else 
-            throw new IllegalArgumentException("Event not found or event location is null");
+            logger.error("Event not found");
+            return null; // Return null if the event is not found or location is null
     }
     
     private String getCurrentWeather(String latitude, String longitude, String time) {
@@ -130,6 +162,10 @@ public class weatherService implements IWeatherService {
                 forecast.setTime(Instant.parse(time));
                 forecast.setWindSpeed(timeEntry.path("data").path("instant").path("details").path("wind_speed").asDouble());
                 forecast.setAirTemperature(timeEntry.path("data").path("instant").path("details").path("air_temperature").asDouble());
+                JsonNode nextXHours = getClosestNextXHours(timeEntry.path("data"));
+            if (nextXHours != null) {
+                forecast.setForecastValue(nextXHours.path("summary").path("symbol_code").asText());
+            }
                 forecastList.add(forecast);
             }
         }
@@ -137,6 +173,17 @@ public class weatherService implements IWeatherService {
             e.printStackTrace();
         }
         return forecastList;
+    }
+
+    private JsonNode getClosestNextXHours(JsonNode dataNode) {
+        if (dataNode.has("next_1_hours")) {
+            return dataNode.path("next_1_hours");
+        } else if (dataNode.has("next_6_hours")) {
+            return dataNode.path("next_6_hours");
+        } else if (dataNode.has("next_12_hours")) {
+            return dataNode.path("next_12_hours");
+        }
+        return null;
     }
 
     private List<ForecastDTO> sliceList(Event event, List<ForecastDTO> forecastList) {
@@ -154,27 +201,42 @@ public class weatherService implements IWeatherService {
             .toList();
 
         if (matchingForecasts.isEmpty()) {
-            throw new IllegalArgumentException("No matching forecasts found for the specified period.");
+            logger.info("No matching forecasts found for the specified period.");
         }
 
         return matchingForecasts;
     }
 
-    private List<Forecast> mapToForecastList(List<ForecastDTO> forecastDTOList) {
+    private ForecastDTO getForecastForEventTime(Event event, List<ForecastDTO> forecastList) {
+        Instant eventTime = event.getEventStartDate().truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+    
+        // Find the forecast closest to the event's time
+        return forecastList.stream()
+            .min((forecast1, forecast2) -> {
+                Duration diff1 = Duration.between(eventTime, forecast1.getTime()).abs();
+                Duration diff2 = Duration.between(eventTime, forecast2.getTime()).abs();
+                return diff1.compareTo(diff2);
+            })
+            .orElseThrow(() -> new IllegalArgumentException("No forecasts available for the event time."));
+    }
+
+    private List<Forecast> mapToForecastList(List<ForecastDTO> forecastDTOList, Event event) {
         return forecastDTOList.stream()
-            .map(dto -> new Forecast(dto.getTime(), dto.getAirTemperature(), dto.getWindSpeed(), Instant.now(), Instant.now()))
+            .map(dto -> new Forecast(event, dto.getTime(), dto.getAirTemperature(), dto.getWindSpeed(), Instant.now(), Instant.now()))
             .toList();
     }
 
     private Forecast getForecastForCurrentTime(List<Forecast> forecastList) {
         Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS);
     
-        // Find the forecast to the current hour
-        Forecast currentForecast = forecastList.stream()
-            .filter(forecast -> forecast.getTime().truncatedTo(java.time.temporal.ChronoUnit.HOURS).equals(now))
-            .findFirst()
+        // Find the forecast to the closest hour
+        return forecastList.stream()
+            .min((forecast1, forecast2) -> {
+                Duration diff1 = Duration.between(now, forecast1.getTime()).abs();
+                Duration diff2 = Duration.between(now, forecast2.getTime()).abs();
+                return diff1.compareTo(diff2);
+            })
             .orElseThrow(() -> new IllegalArgumentException("No forecasts available for the current time."));
     
-        return currentForecast;
     }
 }

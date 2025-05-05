@@ -3,11 +3,7 @@ package no.spond.forecast.model;
 
 import java.time.Instant;
 
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Table;
+import jakarta.persistence.*;
 
 import lombok.NoArgsConstructor;
 import lombok.Getter;
@@ -21,8 +17,10 @@ import lombok.ToString;
 public class Forecast {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Getter @Setter private String id;
-    @Getter @Setter private String eventId;
+    @Getter @Setter private Long id;
+    @ManyToOne
+    @JoinColumn(name = "event_id", nullable = false)
+    @Getter @Setter private Event event;
     @Getter @Setter private Instant time;
     @Getter @Setter private double airTemperature;
     @Getter @Setter private double windSpeed;
@@ -30,7 +28,8 @@ public class Forecast {
     @Getter @Setter private Instant createdDate;
     @Getter @Setter private Instant lastUpdatedDate;
    
-    public Forecast(Instant time, double airTemperature, double windSpeed, Instant createdDate, Instant lastUpdatedDate) {
+    public Forecast(Event event, Instant time, double airTemperature, double windSpeed, Instant createdDate, Instant lastUpdatedDate) {
+        this.event = event;
         this.time = time;
         this.airTemperature = airTemperature;
         this.windSpeed = windSpeed;

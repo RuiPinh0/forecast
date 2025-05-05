@@ -21,3 +21,4 @@ public class ForecastDTO {
     @Getter @Setter private String forecastValue; 
 
 }
+

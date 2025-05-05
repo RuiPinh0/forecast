@@ -2,7 +2,7 @@ package no.spond.forecast.model;
 
 import java.time.Instant;
 import java.util.List;
-import javax.persistence.*;
+import jakarta.persistence.*;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -15,17 +15,19 @@ import lombok.ToString;
 @Table(name = "event")
 public class Event {
     
-    @Getter @Setter private String id;
+    @Id 
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Getter @Setter private Long id;
     @Getter @Setter private String name;
-    @Getter @Setter private User host; //not sure if this should be a user or a team
-    @Getter @Setter private User createdBy;
     @Getter @Setter private Instant createdDate;
     @Getter @Setter private Instant eventStartDate;
     @Getter @Setter private Instant eventEndDate;
+    @ManyToOne
+    @JoinColumn(name = "location_id", nullable = false)
     @Getter @Setter private Location location;
+    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
     @Getter @Setter private List<Forecast> forecasts;
     @Getter @Setter private String updatedBy;
     @Getter @Setter private Instant updatedDate;
-    @Getter @Setter private List<Invite> invitationList;
     @Getter @Setter private String status; // e.g., "scheduled", "completed", "canceled". Here could be a enum
 }

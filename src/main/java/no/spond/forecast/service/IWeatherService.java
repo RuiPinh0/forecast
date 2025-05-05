@@ -3,5 +3,5 @@ package no.spond.forecast.service;
 import no.spond.forecast.dto.ForecastDTO;
 
 public interface IWeatherService {
-    public ForecastDTO getForecast(String eventId) throws Exception;
+    public ForecastDTO getForecast(Long eventId);
 }
