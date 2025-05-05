@@ -42,6 +42,3 @@ In that case you should exec into postgres service and run
     psql -h localhost -p 5432 -U admin -d forecast_db
    ```
 after this you should copy the content on data.sql and commit it. 
-
-
-Sadly no tests has been created for this project. :(

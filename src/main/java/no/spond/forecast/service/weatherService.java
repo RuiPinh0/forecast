@@ -27,8 +27,8 @@ import no.spond.forecast.repository.EventRepository;
 import no.spond.forecast.repository.ForecastRepository;
 
 @Service
-public class weatherService implements IWeatherService {
-    private static final Logger logger = LoggerFactory.getLogger(weatherService.class);
+public class WeatherService implements IWeatherService {
+    private static final Logger logger = LoggerFactory.getLogger(WeatherService.class);
 
     @Autowired
     private EventRepository eventRepository;
@@ -98,10 +98,6 @@ public class weatherService implements IWeatherService {
                                     updated = true;
                                     break;
                                 }
-                            }
-                
-                            if (!updated) {
-                                existingForecasts.add(newForecast);
                             }
                             
                             return new ForecastDTO(getForecastForCurrentTime(existingForecasts)); //return the forecast for the current time
