@@ -83,10 +83,6 @@ public class weatherService implements IWeatherService {
                     }
 
                     List<Forecast> newForecasts = mapToForecastList(filteredForecasts, event);
-                    logger.info("forecastList size: {}" , forecastList.size());
-                    logger.info("filteredForecasts size: {}" , filteredForecasts.size());
-                    logger.info("newForecasts size: {}" , newForecasts.size());
-                    logger.info("existingForecasts size: {}" , existingForecasts.size());
 
                     if (existingForecasts != null && !existingForecasts.isEmpty()) {
                                         
@@ -112,19 +108,10 @@ public class weatherService implements IWeatherService {
                         
                         }
                     } else {
-                        logger.info("1-New forecasts saved to the database.");                   
-                        logger.info("Forecasts size: {}" , newForecasts.size());     
-                        logger.info("Forecasts: {}" , newForecasts.stream().map(forecast -> forecast.getTime().toString())
-                        .collect(Collectors.joining(", ")));
                         newForecasts.forEach(forecast -> forecast.setEvent(event)); 
                     
                         newForecasts.forEach(forecast -> forecastRepository.save(forecast));
-                        logger.info("2-New forecasts saved to the database.");                   
-                        logger.info("Forecasts size: {}" , newForecasts.size());     
-                        logger.info("Forecasts: {}" , newForecasts.stream().map(forecast -> forecast.getTime().toString())
-                        .collect(Collectors.joining(", ")));
-
-                        return new ForecastDTO(getForecastForCurrentTime(newForecasts)); //return the forecast for the current time
+                        return new ForecastDTO(getForecastForCurrentTime(newForecasts));
                     }
                 }
                 logger.error("No response from weather API or response is empty");
