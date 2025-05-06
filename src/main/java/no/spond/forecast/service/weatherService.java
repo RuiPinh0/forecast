@@ -8,12 +8,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -29,6 +29,8 @@ import no.spond.forecast.repository.ForecastRepository;
 @Service
 public class WeatherService implements IWeatherService {
     private static final Logger logger = LoggerFactory.getLogger(WeatherService.class);
+    private static final String USERAGENT_HEADER = "User-Agent";
+
 
     @Autowired
     private EventRepository eventRepository;
@@ -36,9 +38,14 @@ public class WeatherService implements IWeatherService {
     @Autowired
     private ForecastRepository forecastRepository;
 
+    @Value("${weather.api.base-url}") 
+    private String baseUrl;
+    @Value("${weather.api.header.user-agent}") 
+    private String userAgent;
+
     private RestClient metClient = RestClient.builder()
-        .baseUrl("https://api.met.no/weatherapi/locationforecast/2.0")
-        .defaultHeader("User-Agent", "ForecastService/0.1 ruip.90@gmail.com")
+        .baseUrl(baseUrl)
+        .defaultHeader(USERAGENT_HEADER, userAgent)
         .build();
     
     @Override
@@ -122,7 +129,6 @@ public class WeatherService implements IWeatherService {
     private String getCurrentWeather(String latitude, String longitude, String time) {
         return metClient.get()
             .uri(uriBuilder -> uriBuilder
-                .path("/compact")
                 .queryParam("lat", latitude)
                 .queryParam("lon", longitude)
                 .build())

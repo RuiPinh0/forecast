@@ -42,3 +42,13 @@ In that case you should exec into postgres service and run
     psql -h localhost -p 5432 -U admin -d forecast_db
    ```
 after this you should copy the content on data.sql and commit it. 
+
+---
+
+## Next steps
+
+1 - Add authentication and authorization on the web service using a oAuth2 JWT token for example
+2 - Integrate the web service on frontend
+3 - integrate the microservice on CI/CD
+4 - Deploy the service
+5 - Mantain the service
